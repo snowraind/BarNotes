@@ -6,8 +6,8 @@ BarNotes is forked from / based on [oil-oil/NotchNotes](https://github.com/oil-o
 
 ## Download
 
-- [Download the latest release](https://github.com/snowraind/NotchNotes/releases/latest)
-- [Open the homepage](https://snowraind.github.io/NotchNotes/)
+- [Download the latest release](https://github.com/snowraind/BarNotes/releases/latest)
+- [Open the homepage](https://snowraind.github.io/BarNotes/)
 
 After downloading, unzip the app, move it to Applications, then right-click and choose Open on the first launch.
 
