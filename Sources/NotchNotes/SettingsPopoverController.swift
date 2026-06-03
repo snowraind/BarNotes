@@ -14,7 +14,7 @@ final class SettingsPopoverController: NSObject, NSWindowDelegate {
     private var localOutsideClickMonitor: Any?
     private var globalOutsideClickMonitor: Any?
     private var suppressShowUntil: Date?
-    private let contentSize = NSSize(width: 238, height: 126)
+    private let contentSize = NSSize(width: 278, height: 202)
 
     init(settingsStore: AppSettingsStore) {
         self.settingsStore = settingsStore
@@ -185,23 +185,28 @@ final class SettingsPopoverController: NSObject, NSWindowDelegate {
 struct SettingsPopoverView: View {
     @ObservedObject var settingsStore: AppSettingsStore
     @State private var appeared = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var theme: AppTheme {
+        AppTheme.resolve(mode: settingsStore.appearanceMode, colorScheme: colorScheme)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(theme.color(theme.secondaryText))
 
                 Text("Settings")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(theme.color(theme.primaryText))
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Trigger")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.50))
+                    .foregroundStyle(theme.color(theme.mutedText))
 
                 HStack(spacing: 8) {
                     ForEach(TriggerMode.allCases) { mode in
@@ -221,14 +226,44 @@ struct SettingsPopoverView: View {
                     }
                 }
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Appearance")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.color(theme.mutedText))
+
+                HStack(spacing: 8) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Button {
+                            settingsStore.appearanceMode = mode
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: mode.systemImage)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(mode.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 34)
+                        }
+                        .buttonStyle(PopoverTriggerButtonStyle(isSelected: settingsStore.appearanceMode == mode))
+                    }
+                }
+            }
         }
+        .environment(\.appTheme, theme)
+        .preferredColorScheme(theme.isDark ? .dark : .light)
         .padding(14)
-        .frame(width: 238, height: 126)
+        .frame(width: 278, height: 202)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 0.045, green: 0.045, blue: 0.052).opacity(0.98))
+                .fill(theme.color(theme.panelBackground))
         )
-        .shadow(color: .black.opacity(0.45), radius: 24, x: 0, y: 14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(theme.color(theme.stroke), lineWidth: 1)
+        )
+        .shadow(color: theme.color(theme.shadow), radius: 24, x: 0, y: 14)
         .scaleEffect(appeared ? 1 : 0.965, anchor: .topTrailing)
         .opacity(appeared ? 1 : 0)
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: appeared)
@@ -240,13 +275,14 @@ struct SettingsPopoverView: View {
 
 struct PopoverTriggerButtonStyle: ButtonStyle {
     let isSelected: Bool
+    @Environment(\.appTheme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.white.opacity(foregroundOpacity(configuration: configuration)))
+            .foregroundStyle(theme.textColor(opacity: foregroundOpacity(configuration: configuration)))
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.white.opacity(backgroundOpacity(configuration: configuration)))
+                    .fill(theme.surfaceColor(opacity: backgroundOpacity(configuration: configuration)))
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

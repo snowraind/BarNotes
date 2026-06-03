@@ -255,17 +255,21 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             textView.textContainerInset = desiredTextInset
         }
         // Refresh services/theme when the embedder hands us a new configuration
-        // (e.g. when the available wiki-link targets change). Cheap pointer-/
-        // value-based comparison; full equality isn't required because the
-        // embedder is the source of truth.
+        // (e.g. when available image targets or colors change). Theme changes
+        // must force a restyle even when the text and font are unchanged.
+        let themeChanged = !Self.sameTheme(context.coordinator.configuration.theme, configuration.theme)
         if context.coordinator.configuration.services.images.fingerprint()
             != configuration.services.images.fingerprint() {
             context.coordinator.configuration.services = configuration.services
             (nsView.documentView as? NativeTextView)?.configuration.services = configuration.services
         }
+        if themeChanged {
+            context.coordinator.configuration.theme = configuration.theme
+            (nsView.documentView as? NativeTextView)?.configuration.theme = configuration.theme
+        }
         textView.isEditable = isEditable
         textView.isSelectable = isEditable
-        textView.insertionPointColor = isEditable ? context.coordinator.configuration.theme.bodyText : .clear
+        textView.insertionPointColor = isEditable ? configuration.theme.bodyText : .clear
         let fontChanged = (context.coordinator.fontName != fontName) || (context.coordinator.fontSize != fontSize)
         if let pendingInlineReplacement {
             if pendingInlineReplacement.documentId == documentId,
@@ -281,10 +285,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
         if context.coordinator.didInitialFormatting
             && context.coordinator.lastSyncedText == text
-            && !fontChanged {
+            && !fontChanged
+            && !themeChanged {
             return
         }
-        if fontChanged {
+        if fontChanged || themeChanged {
             context.coordinator.didInitialFormatting = false
         }
         if isNodeSwitch {
@@ -331,6 +336,20 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         context.coordinator.onInlineSelectionChange = onInlineSelectionChange
         context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
         context.coordinator.didInitialFormatting = true
+    }
+
+    private static func sameTheme(_ lhs: MarkdownEditorTheme, _ rhs: MarkdownEditorTheme) -> Bool {
+        lhs.bodyText.isEqual(rhs.bodyText)
+            && lhs.mutedText.isEqual(rhs.mutedText)
+            && lhs.disabledText.isEqual(rhs.disabledText)
+            && lhs.headingMarker.isEqual(rhs.headingMarker)
+            && lhs.link.isEqual(rhs.link)
+            && lhs.incompleteLink.isEqual(rhs.incompleteLink)
+            && lhs.findMatchHighlight.isEqual(rhs.findMatchHighlight)
+            && lhs.findCurrentMatchHighlight.isEqual(rhs.findCurrentMatchHighlight)
+            && lhs.latexLightModeText.isEqual(rhs.latexLightModeText)
+            && lhs.latexDarkModeText.isEqual(rhs.latexDarkModeText)
+            && lhs.strikethroughColor.isEqual(rhs.strikethroughColor)
     }
 
     public func makeCoordinator() -> Coordinator {

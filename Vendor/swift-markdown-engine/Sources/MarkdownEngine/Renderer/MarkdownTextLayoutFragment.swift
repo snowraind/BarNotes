@@ -315,7 +315,7 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
         let selectionRanges: [NSRange] = {
             guard let tv = textLayoutManager?.textContainer?.textView else { return [] }
-            let values = tv.selectedRanges as? [NSValue] ?? []
+            let values = tv.selectedRanges
             return values.map { $0.rangeValue }.filter { $0.length > 0 }
         }()
 
@@ -336,6 +336,7 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             let ascent = max(0, font.ascender)
             let descent = max(0, -font.descender)
             let configuration = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration ?? .default
+            let theme = configuration.theme
             let fontHeight = max(1, ceil(ascent + descent))
             let markerWidth = ("[ ]" as NSString).size(withAttributes: [.font: font]).width
             let size = max(
@@ -364,7 +365,7 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             )
 
             if isChecked {
-                NSColor(calibratedRed: 0.69, green: 0.93, blue: 0.81, alpha: 1.0).setFill()
+                theme.link.withAlphaComponent(0.34).setFill()
                 checkboxPath.fill()
 
                 let checkPath = NSBezierPath()
@@ -374,12 +375,12 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
                 checkPath.move(to: CGPoint(x: boxRect.minX + size * 0.26, y: boxRect.midY + size * 0.02))
                 checkPath.line(to: CGPoint(x: boxRect.minX + size * 0.43, y: boxRect.maxY - size * 0.27))
                 checkPath.line(to: CGPoint(x: boxRect.maxX - size * 0.22, y: boxRect.minY + size * 0.30))
-                NSColor(calibratedRed: 0.06, green: 0.07, blue: 0.08, alpha: 1.0).setStroke()
+                theme.bodyText.setStroke()
                 checkPath.stroke()
             } else {
-                NSColor(white: 1.0, alpha: 0.035).setFill()
+                theme.bodyText.withAlphaComponent(0.04).setFill()
                 checkboxPath.fill()
-                NSColor(white: 1.0, alpha: 0.30).setStroke()
+                theme.bodyText.withAlphaComponent(0.38).setStroke()
                 checkboxPath.lineWidth = 1
                 checkboxPath.stroke()
             }

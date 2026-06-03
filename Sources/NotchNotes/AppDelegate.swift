@@ -4,11 +4,15 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: NotchPanelController?
     private var statusItem: NSStatusItem?
+    private var statusButtonTrackingArea: NSTrackingArea?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         panelController = NotchPanelController()
-        panelController?.showDocked()
         buildStatusItem()
+        panelController?.setStatusItemFrameProvider { [weak self] in
+            self?.statusButtonFrame()
+        }
+        panelController?.showDocked()
         buildMenu()
     }
 
@@ -18,6 +22,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.imagePosition = .imageOnly
         item.menu = makeAppMenu()
         statusItem = item
+        installStatusButtonTrackingArea()
+    }
+
+    private func installStatusButtonTrackingArea() {
+        guard let button = statusItem?.button else { return }
+        if let statusButtonTrackingArea {
+            button.removeTrackingArea(statusButtonTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        button.addTrackingArea(trackingArea)
+        statusButtonTrackingArea = trackingArea
+    }
+
+    private func statusButtonFrame() -> NSRect? {
+        guard let button = statusItem?.button, let window = button.window else { return nil }
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        return window.convertToScreen(buttonFrameInWindow)
     }
 
     private func buildMenu() {
@@ -84,6 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selectAllItem.target = nil
         editMenu.addItem(selectAllItem)
 
+        editMenu.addItem(.separator())
+
+        let biggerTextItem = NSMenuItem(title: "Bigger Text", action: #selector(increaseEditorFontSize), keyEquivalent: "=")
+        biggerTextItem.target = self
+        editMenu.addItem(biggerTextItem)
+
+        let smallerTextItem = NSMenuItem(title: "Smaller Text", action: #selector(decreaseEditorFontSize), keyEquivalent: "-")
+        smallerTextItem.target = self
+        editMenu.addItem(smallerTextItem)
+
         return editMenu
     }
 
@@ -97,5 +134,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func increaseEditorFontSize() {
+        panelController?.increaseEditorFontSize()
+    }
+
+    @objc private func decreaseEditorFontSize() {
+        panelController?.decreaseEditorFontSize()
+    }
+
+    func mouseEntered(with event: NSEvent) {
+        panelController?.expand(animated: true)
     }
 }

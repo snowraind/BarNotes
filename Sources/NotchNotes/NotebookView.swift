@@ -8,6 +8,12 @@ final class DrawerState: ObservableObject {
     @Published var revealProgress: CGFloat = 0
 }
 
+private enum NotebookMode: Equatable {
+    case editor
+    case archiveList
+    case archiveDetail(UUID)
+}
+
 struct NotebookView: View {
     @ObservedObject var store: NoteStore
     @ObservedObject var settingsStore: AppSettingsStore
@@ -16,73 +22,56 @@ struct NotebookView: View {
     @ObservedObject var editorInteractionState: EditorInteractionState
     let layout: NotchLayout
     let onOpenSettings: () -> Void
+    @State private var mode: NotebookMode = .editor
+    @State private var pendingDeleteArchive: ArchivedNote?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack(alignment: .top) {
             drawer
         }
+        .environment(\.appTheme, theme)
+        .preferredColorScheme(theme.isDark ? .dark : .light)
         .frame(width: layout.expandedSize.width, height: layout.expandedSize.height, alignment: .top)
+        .alert("Delete archived note?", isPresented: deleteConfirmationBinding) {
+            Button("Delete", role: .destructive) {
+                guard let pendingDeleteArchive else { return }
+                if mode == .archiveDetail(pendingDeleteArchive.id) {
+                    mode = .archiveList
+                }
+                store.deleteArchivedNote(pendingDeleteArchive.id)
+                self.pendingDeleteArchive = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteArchive = nil
+            }
+        } message: {
+            Text(pendingDeleteArchive?.title ?? "This archived note will be deleted.")
+        }
     }
 
     private var drawer: some View {
-        ZStack(alignment: .top) {
-            expandedContent
-                .frame(width: layout.expandedSize.width, height: layout.expandedSize.height)
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
-                .opacity(expandedContentOpacity)
-
-            compactIcon
-        }
+        expandedContent
         .frame(width: layout.expandedSize.width, height: layout.expandedSize.height, alignment: .top)
-        .background(Color(red: 0.02, green: 0.02, blue: 0.025).opacity(0.98))
-        .mask(alignment: .top) {
-            TopAttachedRoundedShape(radius: cornerRadius)
-                .frame(width: revealWidth, height: revealHeight)
-        }
-        .overlay(alignment: .top) {
-            TopAttachedRoundedShape(radius: cornerRadius)
-                .stroke(.white.opacity(0.09), lineWidth: 1)
-                .frame(width: revealWidth, height: revealHeight)
-        }
+        .background(theme.color(theme.panelBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(theme.color(theme.stroke), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .allowsHitTesting(drawerState.isExpanded)
     }
 
     private var expandedContent: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
-                    TabPagerControl(store: store, editorInteractionState: editorInteractionState)
-
-                    Spacer()
-
-                    Button(action: store.clear) {
-                        Image(systemName: "trash")
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(DarkIconButtonStyle())
-                    .help("Clear")
-
-                    Button(action: onOpenSettings) {
-                        Image(systemName: "gearshape")
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(DarkIconButtonStyle())
-                    .help("Settings")
-                }
+        VStack(spacing: 12) {
+            header
                 .frame(height: toolbarHeight, alignment: .center)
 
-                MarkdownEditorPanel(
-                    store: store,
-                    imageStore: imageStore,
-                    editorInteractionState: editorInteractionState,
-                    size: editorSize
-                )
-                .frame(width: editorSize.width, height: editorSize.height)
-                .background(Color(red: 0.06, green: 0.06, blue: 0.07))
-            }
+            content
+                .frame(width: contentSize.width, height: contentSize.height)
+                .background(theme.color(theme.contentBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .padding(.top, toolbarTopPadding)
         .padding(.horizontal, contentHorizontalPadding)
@@ -95,37 +84,117 @@ struct NotebookView: View {
             editorInteractionState.restoreSelection(store.selectionRange(for: store.activeTabID))
         }
         .onChange(of: store.activeTabID) { _, newTabID in
-            editorInteractionState.restoreSelection(store.selectionRange(for: newTabID))
-            editorInteractionState.requestLayoutRefresh(resetScroll: false)
+            if case .editor = mode {
+                editorInteractionState.restoreSelection(store.selectionRange(for: newTabID))
+                editorInteractionState.requestLayoutRefresh(resetScroll: false)
+            }
         }
     }
 
-    private var compactIcon: some View {
-        Image(systemName: "note.text")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.82))
-            .frame(width: layout.compactSize.width, height: layout.compactSize.height)
-            .opacity(1 - drawerState.revealProgress)
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            switch mode {
+            case .editor:
+                TabPagerControl(store: store, editorInteractionState: editorInteractionState)
+
+                Spacer()
+
+                Button(action: archiveActiveTab) {
+                    Image(systemName: "archivebox")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Archive current note")
+
+                Button {
+                    mode = .archiveList
+                } label: {
+                    Image(systemName: "tray.full")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Archived notes")
+
+            case .archiveList:
+                HeaderTitle(systemImage: "tray.full", title: "Archive")
+
+                Spacer()
+
+                Button {
+                    mode = .editor
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Back to editor")
+
+            case .archiveDetail:
+                Button {
+                    mode = .archiveList
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Back to archive")
+
+                HeaderTitle(systemImage: "doc.text", title: selectedArchive?.title ?? "Archive")
+
+                Spacer()
+            }
+
+            Button(action: onOpenSettings) {
+                Image(systemName: "gearshape")
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(DarkIconButtonStyle())
+            .help("Settings")
+        }
     }
 
-    private var revealWidth: CGFloat {
-        interpolate(from: layout.compactSize.width, to: layout.expandedSize.width)
+    @ViewBuilder
+    private var content: some View {
+        switch mode {
+        case .editor:
+            MarkdownEditorPanel(
+                store: store,
+                settingsStore: settingsStore,
+                imageStore: imageStore,
+                editorInteractionState: editorInteractionState,
+                size: contentSize
+            )
+
+        case .archiveList:
+            ArchiveListView(
+                store: store,
+                onOpen: { mode = .archiveDetail($0) },
+                onDelete: { pendingDeleteArchive = $0 }
+            )
+
+        case .archiveDetail(let id):
+            if let archivedNote = store.archivedNotes.first(where: { $0.id == id }) {
+                ArchiveDetailView(
+                    note: archivedNote,
+                    onRestore: {
+                        store.restoreArchivedNote(id)
+                        mode = .editor
+                        editorInteractionState.restoreSelection(store.selectionRange(for: store.activeTabID))
+                        editorInteractionState.requestLayoutRefresh(resetScroll: true)
+                    },
+                    onDelete: {
+                        pendingDeleteArchive = archivedNote
+                    }
+                )
+            } else {
+                ArchiveMissingView {
+                    mode = .archiveList
+                }
+            }
+        }
     }
 
-    private var revealHeight: CGFloat {
-        interpolate(from: layout.compactSize.height, to: layout.expandedSize.height)
-    }
-
-    private var cornerRadius: CGFloat {
-        interpolate(from: 12, to: 18)
-    }
-
-    private var expandedContentOpacity: CGFloat {
-        let progress = drawerState.revealProgress
-        return min(max((progress - 0.42) / 0.34, 0), 1)
-    }
-
-    private var editorSize: CGSize {
+    private var contentSize: CGSize {
         CGSize(
             width: layout.expandedSize.width - contentHorizontalPadding * 2,
             height: layout.expandedSize.height - toolbarTopPadding - contentBottomPadding - toolbarHeight - editorSpacing
@@ -133,7 +202,7 @@ struct NotebookView: View {
     }
 
     private var toolbarTopPadding: CGFloat {
-        layout.compactSize.height + 6
+        16
     }
 
     private var contentHorizontalPadding: CGFloat {
@@ -145,43 +214,263 @@ struct NotebookView: View {
     }
 
     private var toolbarHeight: CGFloat {
-        28
+        32
     }
 
     private var editorSpacing: CGFloat {
         12
     }
 
-    private func interpolate(from start: CGFloat, to end: CGFloat) -> CGFloat {
-        start + (end - start) * drawerState.revealProgress
+    private var selectedArchive: ArchivedNote? {
+        guard case .archiveDetail(let id) = mode else { return nil }
+        return store.archivedNotes.first { $0.id == id }
+    }
+
+    private var theme: AppTheme {
+        AppTheme.resolve(mode: settingsStore.appearanceMode, colorScheme: colorScheme)
+    }
+
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteArchive != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDeleteArchive = nil
+                }
+            }
+        )
+    }
+
+    private func archiveActiveTab() {
+        _ = store.archiveActiveTab()
+        mode = .editor
+        editorInteractionState.resetSelectionToDocumentStart()
+        editorInteractionState.requestLayoutRefresh(resetScroll: true)
+    }
+}
+
+private struct HeaderTitle: View {
+    let systemImage: String
+    let title: String
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(theme.textColor(opacity: 0.88))
+    }
+}
+
+private struct ArchiveListView: View {
+    @ObservedObject var store: NoteStore
+    let onOpen: (UUID) -> Void
+    let onDelete: (ArchivedNote) -> Void
+
+    var body: some View {
+        Group {
+            if store.archivedNotes.isEmpty {
+                ArchiveEmptyView()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(store.archivedNotes) { note in
+                            ArchiveRow(
+                                note: note,
+                                title: titleBinding(for: note),
+                                onOpen: { onOpen(note.id) },
+                                onDelete: { onDelete(note) }
+                            )
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+        }
+    }
+
+    private func titleBinding(for note: ArchivedNote) -> Binding<String> {
+        Binding(
+            get: {
+                store.archivedNotes.first(where: { $0.id == note.id })?.title ?? note.title
+            },
+            set: {
+                store.renameArchivedNote(note.id, title: $0)
+            }
+        )
+    }
+}
+
+private struct ArchiveRow: View {
+    let note: ArchivedNote
+    @Binding var title: String
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                TextField("Untitled Note", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.textColor(opacity: 0.90))
+
+                Text(note.archivedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(theme.color(theme.mutedText))
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: onOpen) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(DarkIconButtonStyle())
+            .help("Open archived note")
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(DarkIconButtonStyle())
+            .help("Delete archived note")
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.color(theme.rowBackground))
+        )
+    }
+}
+
+private struct ArchiveDetailView: View {
+    let note: ArchivedNote
+    let onRestore: () -> Void
+    let onDelete: () -> Void
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(note.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.textColor(opacity: 0.90))
+                        .lineLimit(1)
+
+                    Text("Archived \(note.archivedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(theme.color(theme.mutedText))
+                }
+
+                Spacer()
+
+                Button(action: onRestore) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Restore from archive")
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DarkIconButtonStyle())
+                .help("Delete archived note")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Rectangle()
+                .fill(theme.color(theme.separator))
+                .frame(height: 1)
+
+            ScrollView {
+                Text(note.text.isEmpty ? "Empty note" : note.text)
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(note.text.isEmpty ? theme.color(theme.disabledText) : theme.textColor(opacity: 0.88))
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(12)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+private struct ArchiveEmptyView: View {
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(theme.color(theme.disabledText))
+
+            Text("No archived notes")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(theme.color(theme.secondaryText))
+
+            Text("Archive a note to keep it here with its date.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(theme.color(theme.mutedText))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct ArchiveMissingView: View {
+    let onBack: () -> Void
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Archived note not found")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(theme.color(theme.secondaryText))
+
+            Button("Back to Archive", action: onBack)
+                .buttonStyle(.borderless)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 struct MarkdownEditorPanel: View {
     @ObservedObject var store: NoteStore
+    @ObservedObject var settingsStore: AppSettingsStore
     let imageStore: LocalImageStore
     let editorInteractionState: EditorInteractionState
     let size: CGSize
+    @Environment(\.appTheme) private var theme
 
-    private let toolbarHeight: CGFloat = 34
+    private let toolbarHeight: CGFloat = 36
     private let separatorHeight: CGFloat = 1
 
     var body: some View {
         VStack(spacing: 0) {
             MarkdownNoteEditor(
                 store: store,
+                settingsStore: settingsStore,
                 imageStore: imageStore,
                 editorInteractionState: editorInteractionState
             )
             .frame(width: size.width, height: editorHeight)
 
             Rectangle()
-                .fill(.white.opacity(0.045))
+                .fill(theme.color(theme.separator))
                 .frame(width: size.width, height: separatorHeight)
 
             MarkdownShortcutToolbar(editorInteractionState: editorInteractionState)
                 .frame(width: size.width, height: toolbarHeight)
-                .background(Color(red: 0.055, green: 0.055, blue: 0.065))
+                .background(theme.color(theme.toolbarBackground))
         }
     }
 
@@ -200,7 +489,7 @@ struct MarkdownShortcutToolbar: View {
                     editorInteractionState.applyMarkdownCommand(command)
                 } label: {
                     MarkdownCommandLabel(command: command)
-                        .frame(width: 26, height: 24)
+                        .frame(width: 32, height: 28)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(MarkdownToolbarButtonStyle())
@@ -220,23 +509,31 @@ struct MarkdownCommandLabel: View {
         switch command {
         case .bold:
             Image(systemName: "bold")
+                .font(.system(size: 13, weight: .semibold))
         case .italic:
             Image(systemName: "italic")
+                .font(.system(size: 13, weight: .semibold))
         case .strikethrough:
             Image(systemName: "strikethrough")
+                .font(.system(size: 13, weight: .semibold))
         case .inlineCode:
             Text("`")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(.system(size: 15, weight: .bold, design: .monospaced))
         case .link:
             Image(systemName: "link")
+                .font(.system(size: 13, weight: .semibold))
         case .quote:
             Image(systemName: "quote.opening")
+                .font(.system(size: 13, weight: .semibold))
         case .unorderedList:
             Image(systemName: "list.bullet")
+                .font(.system(size: 13, weight: .semibold))
         case .orderedList:
             Image(systemName: "list.number")
+                .font(.system(size: 13, weight: .semibold))
         case .todoList:
             Image(systemName: "checklist")
+                .font(.system(size: 13, weight: .semibold))
         }
     }
 }
@@ -245,6 +542,7 @@ struct TabPagerControl: View {
     @ObservedObject var store: NoteStore
     let editorInteractionState: EditorInteractionState
     @Namespace private var tabAnimation
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -272,7 +570,7 @@ struct TabPagerControl: View {
                         }
                     } label: {
                         Capsule()
-                            .fill(isSelected ? Color.white.opacity(0.82) : Color.white.opacity(0.34))
+                            .fill(isSelected ? theme.textColor(opacity: 0.82) : theme.textColor(opacity: 0.34))
                             .frame(width: isSelected ? 20 : 6, height: 6)
                             .frame(width: 26, height: 24)
                             .contentShape(Rectangle())
@@ -303,7 +601,7 @@ struct TabPagerControl: View {
         .padding(.horizontal, 2)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.white.opacity(0.045))
+                .fill(theme.color(theme.rowBackground))
         )
     }
 
@@ -317,30 +615,14 @@ struct TabPagerControl: View {
     }
 }
 
-struct CompactNotchView: View {
-    let layout: NotchLayout
-
-    var body: some View {
-        Image(systemName: "note.text")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.82))
-            .frame(width: layout.compactSize.width, height: layout.compactSize.height)
-            .background(Color(red: 0.02, green: 0.02, blue: 0.025).opacity(0.98))
-            .clipShape(TopAttachedRoundedShape(radius: 12))
-            .overlay(
-                TopAttachedRoundedShape(radius: 12)
-                    .stroke(.white.opacity(0.09), lineWidth: 1)
-            )
-            .pointingHandCursor()
-    }
-}
-
 struct MarkdownNoteEditor: View {
     @ObservedObject var store: NoteStore
+    @ObservedObject var settingsStore: AppSettingsStore
     let imageStore: LocalImageStore
     let editorInteractionState: EditorInteractionState
     @State private var isWikiLinkActive = false
     @State private var pendingInlineReplacement: InlineReplacementRequest?
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         NativeTextViewWrapper(
@@ -352,7 +634,7 @@ struct MarkdownNoteEditor: View {
             pendingInlineReplacement: $pendingInlineReplacement,
             configuration: configuration,
             fontName: "SF Pro",
-            fontSize: 15,
+            fontSize: CGFloat(settingsStore.editorFontSize),
             documentId: store.activeTabID.uuidString,
             isEditable: true,
             onPasteImage: savePastedImage
@@ -368,17 +650,17 @@ struct MarkdownNoteEditor: View {
 
     private var configuration: MarkdownEditorConfiguration {
         let theme = MarkdownEditorTheme(
-            bodyText: NSColor(white: 0.92, alpha: 1),
-            mutedText: NSColor(white: 0.58, alpha: 1),
-            disabledText: NSColor(white: 0.38, alpha: 1),
-            headingMarker: NSColor(white: 0.44, alpha: 1),
-            link: NSColor.systemBlue,
-            incompleteLink: NSColor.systemBlue.withAlphaComponent(0.75),
+            bodyText: self.theme.primaryText,
+            mutedText: self.theme.mutedText,
+            disabledText: self.theme.disabledText,
+            headingMarker: self.theme.mutedText,
+            link: self.theme.accent,
+            incompleteLink: self.theme.accent.withAlphaComponent(0.75),
             findMatchHighlight: NSColor.systemYellow.withAlphaComponent(0.55),
             findCurrentMatchHighlight: NSColor.systemYellow,
-            latexLightModeText: .white,
-            latexDarkModeText: .white,
-            strikethroughColor: NSColor(white: 0.62, alpha: 1)
+            latexLightModeText: self.theme.primaryText,
+            latexDarkModeText: self.theme.primaryText,
+            strikethroughColor: self.theme.mutedText
         )
 
         let services = MarkdownEditorServices(images: imageStore)
@@ -473,7 +755,7 @@ struct MarkdownToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         RoundedHoverButtonBody(
             configuration: configuration,
-            font: .system(size: 11, weight: .semibold),
+            font: .system(size: 13, weight: .semibold),
             normalOpacity: 0,
             hoverOpacity: 0.065,
             pressedOpacity: 0.10,
@@ -497,6 +779,7 @@ private struct RoundedHoverButtonBody: View {
     let pressedForegroundOpacity: CGFloat
 
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appTheme) private var theme
     @State private var isHovering = false
 
     init(
@@ -524,10 +807,10 @@ private struct RoundedHoverButtonBody: View {
     var body: some View {
         configuration.label
             .font(font)
-            .foregroundStyle(.white.opacity(currentForegroundOpacity))
+            .foregroundStyle(theme.textColor(opacity: currentForegroundOpacity))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.white.opacity(currentBackgroundOpacity))
+                    .fill(theme.surfaceColor(opacity: currentBackgroundOpacity))
             )
             .animation(.easeOut(duration: 0.10), value: isHovering)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)

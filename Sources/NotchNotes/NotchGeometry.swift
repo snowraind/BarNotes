@@ -52,14 +52,12 @@ enum NotchGeometry {
 
     static func layout(for screen: NSScreen?) -> NotchLayout {
         let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let measured = screen?.measuredNotchSize ?? .zero
-        let fallbackNotch = NSSize(width: 210, height: 32)
-        let notch = measured == .zero ? fallbackNotch : measured
+        let notch = screen?.measuredNotchSize ?? .zero
 
-        let compactWidth = min(max(notch.width - 6, 182), 238)
-        let compactHeight = min(max(notch.height + 2, 32), 38)
-        let expandedWidth = min(max(notch.width + 220, 480), 540, screenFrame.width - 36)
-        let expandedHeight = min(max(notch.height + 374, 408), screenFrame.height - 84)
+        let compactWidth: CGFloat = 0
+        let compactHeight: CGFloat = 0
+        let expandedWidth = min(max(520, screenFrame.width * 0.34), 560, screenFrame.width - 36)
+        let expandedHeight = min(max(500, screenFrame.height * 0.58), 620, screenFrame.height - 84)
 
         return NotchLayout(
             notchSize: notch,
