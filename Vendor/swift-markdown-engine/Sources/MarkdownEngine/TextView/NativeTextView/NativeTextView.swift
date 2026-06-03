@@ -58,6 +58,15 @@ final class NativeTextView: NSTextView {
         }
     }
 
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.keyCode == 48, flags.contains(.shift), MarkdownLists.outdentListItems(in: self) {
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
     // AppKit doesn't fire textDidChange for setMarkedText mutations, so Apple's inline-prediction inserts the completion with base typingAttributes and heading lines flicker to body font; restyle the paragraph here to reapply heading font.
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)

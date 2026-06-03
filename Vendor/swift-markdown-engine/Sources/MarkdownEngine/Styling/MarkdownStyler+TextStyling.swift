@@ -95,6 +95,27 @@ extension MarkdownStyler {
             attrs.append((range, [.font: font]))
             i = j
         }
+        attrs += styleStrikethrough(ctx)
+        return attrs
+    }
+
+    private static func styleStrikethrough(_ ctx: StylingContext) -> [StyledRange] {
+        var attrs: [StyledRange] = []
+        for token in ctx.tokens where token.kind == .strikethrough {
+            if MarkdownDetection.isInsideCodeBlock(range: token.range, codeTokens: ctx.codeTokens) { continue }
+            attrs.append((token.contentRange, [
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: ctx.configuration.theme.strikethroughColor
+            ]))
+
+            let isActiveSyntax = token.markerRanges.contains { markerRange in
+                NSLocationInRange(ctx.caretLocation, markerRange) || ctx.caretLocation == NSMaxRange(markerRange)
+            }
+            guard !isActiveSyntax else { continue }
+            for markerRange in token.markerRanges {
+                attrs.append((markerRange, [.foregroundColor: ctx.configuration.theme.mutedText.withAlphaComponent(0.45)]))
+            }
+        }
         return attrs
     }
 

@@ -33,7 +33,7 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
     /// and block images drawn below text via paragraphSpacing.
     override var renderingSurfaceBounds: CGRect {
         var bounds = super.renderingSurfaceBounds
-        if hasCodeBlockBackground {
+        if hasCodeBlockBackground || hasHorizontalRule {
             let containerWidth = textLayoutManager?.textContainer?.size.width ?? bounds.width
             // Extend left to container edge
             bounds.origin.x = -layoutFragmentFrame.origin.x
@@ -56,10 +56,20 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         // 2. LaTeX images (behind text — hidden markers are invisible anyway)
         drawLatexImages(at: point, in: context)
 
-        // 3. Normal text
+        // 3. Blockquote rules (behind text)
+        drawBlockquoteLines(at: point, in: context)
+
+        // 4. Normal text
         super.draw(at: point, in: context)
 
-        // 4. Task checkboxes (on top of hidden [ ]/[x] markers)
+        // 5. Horizontal rules (on top of hidden --- markers)
+        drawHorizontalRules(at: point, in: context)
+
+        // 6. List bullets and ordered markers (on top of hidden Markdown markers)
+        drawListBullets(at: point, in: context)
+        drawOrderedListMarkers(at: point, in: context)
+
+        // 7. Task checkboxes (on top of hidden [ ]/[x] markers)
         drawTaskCheckboxes(at: point, in: context)
     }
 
@@ -126,6 +136,18 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         let bgColor = ts.attribute(.backgroundColor, at: range.location, effectiveRange: nil) as? NSColor
         guard let bgColor else { return false }
         return isCodeBlockBackgroundColor(bgColor)
+    }
+
+    private var hasHorizontalRule: Bool {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return false }
+        var found = false
+        ts.enumerateAttribute(.horizontalRule, in: range, options: []) { value, _, stop in
+            if value != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
     }
 
     private func drawCodeBlockBackground(at point: CGPoint, in context: CGContext) {
@@ -306,6 +328,150 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
                                   width: imageBounds.width, height: imageBounds.height)
             }
             image.draw(in: drawRect)
+        }
+    }
+
+    // MARK: - Blockquotes
+
+    private func drawBlockquoteLines(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: true)
+        NSGraphicsContext.current = nsContext
+
+        ts.enumerateAttribute(.blockquoteLine, in: range, options: []) { [weak self] value, attrRange, _ in
+            guard let self, value != nil else { return }
+            guard let localRange = self.fragmentNSRange else { return }
+            let localIndex = attrRange.location - localRange.location
+            guard localIndex >= 0,
+                  let lineBounds = self.lineBounds(forLocalIndex: localIndex, point: point) else { return }
+
+            let font = (ts.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
+                ?? (textLayoutManager?.textContainer?.textView?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
+            let scale = textLayoutManager?.textContainer?.textView?.window?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor ?? 2.0
+            let spacerWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+            let x = (lineBounds.minX + spacerWidth * 0.5) * scale
+            let rect = CGRect(
+                x: x.rounded(.toNearestOrAwayFromZero) / scale,
+                y: lineBounds.minY,
+                width: max(1.5, 2 / scale),
+                height: lineBounds.height
+            )
+            let configuration = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration ?? .default
+            configuration.theme.strikethroughColor.withAlphaComponent(0.58).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.width / 2).fill()
+        }
+    }
+
+    // MARK: - Horizontal Rules
+
+    private func drawHorizontalRules(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: true)
+        NSGraphicsContext.current = nsContext
+
+        ts.enumerateAttribute(.horizontalRule, in: range, options: []) { [weak self] value, attrRange, _ in
+            guard let self, value != nil else { return }
+            guard let localRange = self.fragmentNSRange else { return }
+            let localIndex = attrRange.location - localRange.location
+            guard localIndex >= 0,
+                  let lineBounds = self.lineBounds(forLocalIndex: localIndex, point: point) else { return }
+
+            let configuration = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration ?? .default
+            let containerWidth = textLayoutManager?.textContainer?.size.width ?? layoutFragmentFrame.width
+            let scale = textLayoutManager?.textContainer?.textView?.window?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor ?? 2.0
+
+            let lineHeight = max(1, lineBounds.height)
+            let lineWidth = max(1, min(3, round(lineHeight * 0.10)))
+            let rawY = lineBounds.midY - lineWidth / 2
+            let y = (rawY * scale).rounded(.toNearestOrAwayFromZero) / scale
+            let x = point.x - layoutFragmentFrame.origin.x
+            let rect = CGRect(
+                x: x,
+                y: y,
+                width: containerWidth,
+                height: max(1 / scale, lineWidth)
+            )
+
+            configuration.theme.strikethroughColor.withAlphaComponent(0.72).setFill()
+            NSBezierPath(rect: rect).fill()
+        }
+    }
+
+    // MARK: - List Bullets
+
+    private func drawListBullets(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: true)
+        NSGraphicsContext.current = nsContext
+
+        ts.enumerateAttribute(.listBullet, in: range, options: []) { [weak self] value, attrRange, _ in
+            guard let self, value != nil else { return }
+            guard let pos = drawPosition(forDocumentCharAt: attrRange.location, point: point) else { return }
+
+            let font = (ts.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
+                ?? (textLayoutManager?.textContainer?.textView?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
+            let markerWidth = ("-" as NSString).size(withAttributes: [.font: font]).width
+            let spacerWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+            let ascent = max(0, font.ascender)
+            let descent = max(0, -font.descender)
+            let diameter = max(3.5, min(6.5, ceil((ascent + descent) * 0.28)))
+            let centerX = pos.x + markerWidth + spacerWidth + diameter / 2
+            let centerY = pos.baselineY + (descent - ascent) / 2
+            let scale = textLayoutManager?.textContainer?.textView?.window?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor ?? 2.0
+            func alignToPixel(_ value: CGFloat) -> CGFloat {
+                (value * scale).rounded(.toNearestOrAwayFromZero) / scale
+            }
+
+            let rect = CGRect(
+                x: alignToPixel(centerX - diameter / 2),
+                y: alignToPixel(centerY - diameter / 2),
+                width: diameter,
+                height: diameter
+            )
+            let configuration = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration ?? .default
+            configuration.theme.bodyText.withAlphaComponent(0.82).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
+    private func drawOrderedListMarkers(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: true)
+        NSGraphicsContext.current = nsContext
+
+        ts.enumerateAttribute(.orderedListMarker, in: range, options: []) { [weak self] value, attrRange, _ in
+            guard let self, let marker = value as? String else { return }
+            guard let pos = drawPosition(forDocumentCharAt: attrRange.location, point: point) else { return }
+
+            let font = (ts.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
+                ?? (textLayoutManager?.textContainer?.textView?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
+            let spacerWidth = ("  " as NSString).size(withAttributes: [.font: font]).width
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: ((textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration.theme.bodyText ?? .labelColor).withAlphaComponent(0.88)
+            ]
+            let markerSize = (marker as NSString).size(withAttributes: attributes)
+            let x = pos.x + spacerWidth
+            let y = pos.baselineY - font.ascender
+            (marker as NSString).draw(
+                in: CGRect(x: x, y: y, width: markerSize.width + 2, height: max(markerSize.height, font.ascender - font.descender)),
+                withAttributes: attributes
+            )
         }
     }
 

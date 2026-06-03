@@ -36,6 +36,18 @@ extension MarkdownStyler {
         pattern: #"^([ \t]*)([-•]|\d+\.)([ \t]+)(\[[ xX]\])(?=[ \t])"#,
         options: [.anchorsMatchLines]
     )
+    static let bulletListRegex: NSRegularExpression = try! NSRegularExpression(
+        pattern: #"^([ \t]*)([-•])([ \t]+)(?!\[[ xX]\](?:[ \t]|$))"#,
+        options: [.anchorsMatchLines]
+    )
+    static let orderedListMarkerRegex: NSRegularExpression = try! NSRegularExpression(
+        pattern: #"^([ \t]*)(\d+\.)([ \t]+)(?!\[[ xX]\](?:[ \t]|$))"#,
+        options: [.anchorsMatchLines]
+    )
+    static let blockquoteRegex: NSRegularExpression = try! NSRegularExpression(
+        pattern: #"^([ \t]*)(>)([ \t]?)(.*)$"#,
+        options: [.anchorsMatchLines]
+    )
 }
 
 // MARK: - Styling Context
@@ -168,6 +180,9 @@ enum MarkdownStyler {
         result += styleBlockLatex(ctx)
         result += styleInlineLatex(ctx)
         result += styleHorizontalRules(ctx)
+        result += styleBlockquotes(ctx)
+        result += styleListBullets(ctx)
+        result += styleOrderedListMarkers(ctx)
         result += styleIncompleteLinkBrackets(ctx)
         result += styleTaskCheckboxes(ctx)
         result += shrinkInactiveMarkers(ctx)
@@ -329,14 +344,122 @@ extension MarkdownStyler {
         let hrPattern = "^[ \\t]*-{3,}[ \\t]*$"
         if let hrRegex = try? NSRegularExpression(pattern: hrPattern, options: [.anchorsMatchLines]) {
             for hrMatch in hrRegex.matches(in: ctx.text, range: ctx.fullRange) {
-                attrs.append((hrMatch.range, [.foregroundColor: NSColor.clear]))
-                attrs.append((hrMatch.range, [
-                    .strikethroughStyle: NSUnderlineStyle.thick.rawValue,
-                    .strikethroughColor: ctx.configuration.theme.strikethroughColor
-                ]))
+                let isActiveSyntax = NSLocationInRange(ctx.caretLocation, hrMatch.range)
+                    || ctx.caretLocation == NSMaxRange(hrMatch.range)
                 let rulePara = NSMutableParagraphStyle()
-                attrs.append((hrMatch.range, [.paragraphStyle: rulePara]))
+                rulePara.minimumLineHeight = ctx.baseDefaultLineHeight
+                rulePara.maximumLineHeight = ctx.baseDefaultLineHeight
+                rulePara.lineSpacing = 0
+                rulePara.paragraphSpacing = 0
+                rulePara.paragraphSpacingBefore = 0
+                if isActiveSyntax {
+                    attrs.append((hrMatch.range, [.paragraphStyle: rulePara]))
+                    continue
+                }
+                attrs.append((hrMatch.range, [
+                    .foregroundColor: NSColor.clear,
+                    .horizontalRule: true,
+                    .paragraphStyle: rulePara
+                ]))
             }
+        }
+        return attrs
+    }
+
+    // MARK: Blockquotes
+
+    static func styleBlockquotes(_ ctx: StylingContext) -> [StyledRange] {
+        var attrs: [StyledRange] = []
+        for match in MarkdownStyler.blockquoteRegex.matches(in: ctx.text, options: [], range: ctx.fullRange) {
+            let markerRange = match.range(at: 2)
+            let spacerRange = match.range(at: 3)
+            guard markerRange.location != NSNotFound else { continue }
+            if MarkdownDetection.isInsideCodeBlock(range: markerRange, codeTokens: ctx.codeTokens) { continue }
+
+            let syntaxEnd = max(NSMaxRange(markerRange), spacerRange.location == NSNotFound ? NSMaxRange(markerRange) : NSMaxRange(spacerRange))
+            let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
+            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
+                || ctx.caretLocation == syntaxEnd
+            guard !isActiveSyntax else { continue }
+
+            let paraRange = ctx.nsText.paragraphRange(for: match.range)
+            let quotePara = NSMutableParagraphStyle()
+            quotePara.minimumLineHeight = ctx.baseDefaultLineHeight
+            quotePara.maximumLineHeight = ctx.baseDefaultLineHeight
+            quotePara.lineSpacing = 0
+            quotePara.paragraphSpacing = ctx.baseParagraphSpacing
+            quotePara.paragraphSpacingBefore = 0
+            let quoteIndent = ("  " as NSString).size(withAttributes: [.font: ctx.baseFont]).width + 10
+            quotePara.firstLineHeadIndent = quoteIndent
+            quotePara.headIndent = quoteIndent
+            attrs.append((paraRange, [
+                .paragraphStyle: quotePara,
+                .blockquoteLine: true
+            ]))
+            attrs.append((markerRange, [.foregroundColor: NSColor.clear]))
+            if spacerRange.location != NSNotFound {
+                attrs.append((spacerRange, [.foregroundColor: NSColor.clear]))
+            }
+        }
+        return attrs
+    }
+
+    // MARK: List Bullets
+
+    static func styleListBullets(_ ctx: StylingContext) -> [StyledRange] {
+        var attrs: [StyledRange] = []
+        for match in MarkdownStyler.bulletListRegex.matches(in: ctx.text, options: [], range: ctx.fullRange) {
+            let markerRange = match.range(at: 2)
+            guard markerRange.location != NSNotFound else { continue }
+            if MarkdownDetection.isInsideCodeBlock(range: markerRange, codeTokens: ctx.codeTokens) { continue }
+            let syntaxEnd = NSMaxRange(match.range(at: 3))
+            let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
+            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
+                || ctx.caretLocation == syntaxEnd
+            guard !isActiveSyntax else { continue }
+
+            let spacerRange = match.range(at: 3)
+            if spacerRange.location != NSNotFound {
+                let extraSpacing = ("  " as NSString).size(withAttributes: [.font: ctx.baseFont]).width
+                attrs.append((spacerRange, [
+                    .foregroundColor: NSColor.clear,
+                    .kern: extraSpacing
+                ]))
+            }
+            attrs.append((markerRange, [
+                .foregroundColor: NSColor.clear,
+                .listBullet: true
+            ]))
+        }
+        return attrs
+    }
+
+    // MARK: Ordered List Markers
+
+    static func styleOrderedListMarkers(_ ctx: StylingContext) -> [StyledRange] {
+        var attrs: [StyledRange] = []
+        for match in MarkdownStyler.orderedListMarkerRegex.matches(in: ctx.text, options: [], range: ctx.fullRange) {
+            let markerRange = match.range(at: 2)
+            guard markerRange.location != NSNotFound else { continue }
+            if MarkdownDetection.isInsideCodeBlock(range: markerRange, codeTokens: ctx.codeTokens) { continue }
+            let syntaxEnd = NSMaxRange(match.range(at: 3))
+            let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
+            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
+                || ctx.caretLocation == syntaxEnd
+            guard !isActiveSyntax else { continue }
+
+            let spacerRange = match.range(at: 3)
+            if spacerRange.location != NSNotFound {
+                let extraSpacing = ("  " as NSString).size(withAttributes: [.font: ctx.baseFont]).width
+                attrs.append((spacerRange, [
+                    .foregroundColor: NSColor.clear,
+                    .kern: extraSpacing
+                ]))
+            }
+            attrs.append((markerRange, [
+                .foregroundColor: NSColor.clear,
+                .orderedListMarker: ctx.nsText.substring(with: markerRange)
+            ]))
         }
         return attrs
     }

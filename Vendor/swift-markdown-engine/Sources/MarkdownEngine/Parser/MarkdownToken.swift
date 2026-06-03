@@ -13,10 +13,15 @@ import Foundation
 extension NSAttributedString.Key {
     public static let wikiLinkID = NSAttributedString.Key("NodeLinkID")
     public static let taskCheckbox = NSAttributedString.Key("TaskCheckbox")
+    static let horizontalRule = NSAttributedString.Key("HorizontalRule")
+    static let listBullet = NSAttributedString.Key("ListBullet")
+    static let orderedListMarker = NSAttributedString.Key("OrderedListMarker")
+    static let blockquoteLine = NSAttributedString.Key("BlockquoteLine")
 }
 
 enum MarkdownTokenKind {
     case italic
+    case strikethrough
     case boldItalic
     case bold
     case link

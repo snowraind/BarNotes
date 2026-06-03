@@ -1,5 +1,7 @@
 # BarNotes
 
+![BarNotes product hero](docs/assets/barnotes-hero.png)
+
 BarNotes is a small native macOS note app that lives in the menu bar. Hover over the menu bar icon to open a compact Markdown notebook for quick tasks, links, screenshots, and tiny reminders.
 
 BarNotes is forked from / based on [oil-oil/NotchNotes](https://github.com/oil-oil/NotchNotes), with modifications by [snowraind](https://github.com/snowraind). The original app focused on a note panel that unfolded from the MacBook notch. This fork changes the interaction model into a menu bar notebook, which works better on Macs without a notch and keeps the app anchored in the top-right system area.
@@ -15,12 +17,32 @@ After downloading, unzip the app, move it to Applications, then right-click and 
 
 - Menu bar notebook that opens on hover by default.
 - Optional click trigger that opens the notebook from the menu bar icon.
-- Live Markdown editing with formatting shortcuts.
+- Live Markdown editing with formatting shortcuts and instant rendering for lists, checkboxes, dividers, quotes, and strikethrough text.
 - Multiple note tabs for quick context switching.
 - Archive notes with editable titles and restore them later.
 - Paste images directly into notes.
 - Dark, light, and automatic appearance modes.
 - Keyboard shortcuts for editor font size.
+
+## Markdown Editing
+
+BarNotes keeps the underlying text as standard Markdown while rendering common syntax in place:
+
+- `- item` renders as an unordered list item.
+- `- [ ] task` renders as a checkbox task.
+- `1. item` renders as an ordered list item.
+- `---` renders as a full-width divider after the cursor leaves the line.
+- `~~item~~` renders with strikethrough styling.
+- `> item` renders as a quote with a left rule.
+
+When the cursor returns to a syntax marker, BarNotes shows the Markdown source again so it stays easy to edit.
+
+## Upgrade Notes
+
+- Existing notes and archives are stored in the user's Preferences, not inside the `.app` bundle, so replacing the app in Applications keeps existing notes.
+- BarNotes migrates data once from the old NotchNotes bundle identifier when needed.
+- The internal storage keys still use the historical `notchNotes.*` names for compatibility.
+- If you use an app cleaner that removes Preferences, export or back up your notes first.
 
 ## Changes From The Original
 
@@ -29,6 +51,7 @@ After downloading, unzip the app, move it to Applications, then right-click and 
 - Added note archiving, restore, and delete flows.
 - Added dark, light, and automatic appearance modes.
 - Added editor font size shortcuts.
+- Improved live Markdown rendering while keeping standard Markdown source text.
 
 ## Stack
 - Swift + AppKit for the menu bar item, floating panel, window levels, and cursor-triggered behavior.

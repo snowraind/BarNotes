@@ -16,11 +16,12 @@ extension MarkdownTokenizer {
         guard len > 0 else { return [] }
 
         let runs = collectAsteriskRuns(in: nsText, length: len)
-        guard !runs.isEmpty else { return [] }
 
         var workingRuns = runs
         var stack: [Int] = []
-        var tokens: [MarkdownToken] = []
+        var tokens: [MarkdownToken] = parseStrikethroughTokens(in: nsText, length: len)
+
+        guard !runs.isEmpty else { return tokens }
 
         for closerIdx in workingRuns.indices {
             if workingRuns[closerIdx].closeable {
@@ -33,6 +34,42 @@ extension MarkdownTokenizer {
                 stack.append(closerIdx)
             }
         }
+        return tokens
+    }
+
+    private static func parseStrikethroughTokens(in nsText: NSString, length len: Int) -> [MarkdownToken] {
+        var tokens: [MarkdownToken] = []
+        var searchLocation = 0
+
+        while searchLocation < len {
+            let remainingRange = NSRange(location: searchLocation, length: len - searchLocation)
+            let openRange = nsText.range(of: "~~", options: [], range: remainingRange)
+            guard openRange.location != NSNotFound else { break }
+
+            let contentStart = openRange.location + openRange.length
+            guard contentStart < len else { break }
+            let closeSearchRange = NSRange(location: contentStart, length: len - contentStart)
+            let closeRange = nsText.range(of: "~~", options: [], range: closeSearchRange)
+            guard closeRange.location != NSNotFound else { break }
+
+            let lineRange = nsText.lineRange(for: openRange)
+            guard NSLocationInRange(closeRange.location, lineRange) else {
+                searchLocation = contentStart
+                continue
+            }
+
+            let contentRange = NSRange(location: contentStart, length: closeRange.location - contentStart)
+            if contentRange.length > 0 {
+                tokens.append(MarkdownToken(
+                    kind: .strikethrough,
+                    range: NSRange(location: openRange.location, length: NSMaxRange(closeRange) - openRange.location),
+                    contentRange: contentRange,
+                    markerRanges: [openRange, closeRange]
+                ))
+            }
+            searchLocation = NSMaxRange(closeRange)
+        }
+
         return tokens
     }
 
