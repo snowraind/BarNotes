@@ -2,18 +2,28 @@
 
 ![NotchNotes preview](docs/assets/readme-hero.png)
 
-NotchNotes is a small native macOS note app that lives at the top edge of your MacBook screen. Move the cursor to the notch area and it unfolds into a dark Markdown notebook for quick tasks, links, screenshots, and tiny reminders.
+NotchNotes is a small native macOS note app that lives in the menu bar. Hover over the menu bar icon to open a compact Markdown notebook for quick tasks, links, screenshots, and tiny reminders.
 
 ## Download
 
-- [Download the latest release](https://github.com/oil-oil/NotchNotes/releases/latest)
-- [Open the homepage](https://oil-oil.github.io/NotchNotes/)
+- [Download the latest release](https://github.com/snowraind/NotchNotes/releases/latest)
+- [Open the homepage](https://snowraind.github.io/NotchNotes/)
 
 After downloading, unzip the app, move it to Applications, then right-click and choose Open on the first launch.
 
+## Features
+
+- Menu bar notebook that opens on hover.
+- Live Markdown editing with formatting shortcuts.
+- Multiple note tabs for quick context switching.
+- Archive notes with editable titles and restore them later.
+- Paste images directly into notes.
+- Dark, light, and automatic appearance modes.
+- Keyboard shortcuts for editor font size.
+
 ## Stack
 
-- Swift + AppKit for the floating panels, window levels, screen targeting, and cursor-triggered behavior.
+- Swift + AppKit for the menu bar item, floating panel, window levels, and cursor-triggered behavior.
 - SwiftUI for the notebook interface.
 - UserDefaults for lightweight local note storage.
 - MarkdownEngine for live Markdown editing and embedded images.
@@ -24,7 +34,7 @@ After downloading, unzip the app, move it to Applications, then right-click and 
 swift run NotchNotes
 ```
 
-After launch, move the cursor to the top-center notch area. The compact notch container expands into the notebook panel.
+After launch, move the cursor over the NotchNotes menu bar icon. The notebook panel opens from the top-right corner.
 
 ## Package
 
