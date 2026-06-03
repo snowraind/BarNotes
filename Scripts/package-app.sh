@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_DIR="$ROOT_DIR/NotchNotes.app"
-APPLICATIONS_APP_DIR="/Applications/NotchNotes.app"
+APP_DIR="$ROOT_DIR/BarNotes.app"
+APPLICATIONS_APP_DIR="/Applications/BarNotes.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
@@ -15,7 +15,7 @@ swift build -c release
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-cp ".build/release/NotchNotes" "$MACOS_DIR/NotchNotes"
+cp ".build/release/BarNotes" "$MACOS_DIR/BarNotes"
 
 if [[ -f "$SOURCE_ICON" ]]; then
   TMP_DIR="$(mktemp -d)"
@@ -42,11 +42,11 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>NotchNotes</string>
+  <string>BarNotes</string>
   <key>CFBundleIdentifier</key>
-  <string>io.github.oiloil.NotchNotes</string>
+  <string>io.github.snowraind.BarNotes</string>
   <key>CFBundleName</key>
-  <string>NotchNotes</string>
+  <string>BarNotes</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

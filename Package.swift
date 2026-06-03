@@ -3,12 +3,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "NotchNotes",
+    name: "BarNotes",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NotchNotes", targets: ["NotchNotes"])
+        .executable(name: "BarNotes", targets: ["NotchNotes"])
     ],
     dependencies: [
         .package(path: "Vendor/swift-markdown-engine")

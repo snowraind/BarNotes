@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusButtonTrackingArea: NSTrackingArea?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DefaultsMigration.migrateIfNeeded()
         panelController = NotchPanelController()
         buildStatusItem()
         panelController?.setStatusItemFrameProvider { [weak self] in
@@ -18,9 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "NotchNotes")
+        item.button?.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "BarNotes")
         item.button?.imagePosition = .imageOnly
-        item.menu = makeAppMenu()
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
         installStatusButtonTrackingArea()
     }
@@ -72,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit NotchNotes", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit BarNotes", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
 
@@ -144,7 +147,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController?.decreaseEditorFontSize()
     }
 
+    @objc private func statusItemClicked() {
+        guard let event = NSApp.currentEvent else {
+            panelController?.statusItemClicked()
+            return
+        }
+
+        if event.type == .rightMouseUp {
+            showStatusMenu()
+            return
+        }
+
+        panelController?.statusItemClicked()
+    }
+
+    private func showStatusMenu() {
+        guard let button = statusItem?.button else { return }
+        let menu = makeAppMenu()
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
+
     func mouseEntered(with event: NSEvent) {
-        panelController?.expand(animated: true)
+        panelController?.statusItemHovered()
     }
 }

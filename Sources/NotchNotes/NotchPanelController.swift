@@ -75,6 +75,15 @@ final class NotchPanelController: NSObject {
         editorInteractionState.requestLayoutRefresh(searchingIn: hostingView)
     }
 
+    func statusItemHovered() {
+        guard settingsStore.triggerMode == .hover else { return }
+        expand(animated: true)
+    }
+
+    func statusItemClicked() {
+        expand(animated: true)
+    }
+
     func showDocked() {
         let layout = currentLayout()
         rebuildContent(layout: layout)
