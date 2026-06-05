@@ -10,7 +10,8 @@ enum DefaultsMigration {
         "notchNotes.archivedNotes.v1",
         "notchNotes.triggerMode",
         "notchNotes.appearanceMode",
-        "notchNotes.editorFontSize"
+        "notchNotes.editorFontSize",
+        "notchNotes.panelHeight"
     ]
 
     static func migrateIfNeeded() {

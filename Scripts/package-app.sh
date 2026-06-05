@@ -7,6 +7,7 @@ APPLICATIONS_APP_DIR="/Applications/BarNotes.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+ZIP_PATH="$ROOT_DIR/docs/BarNotes.zip"
 SOURCE_ICON="$ROOT_DIR/Resources/AppIcon.png"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
@@ -52,9 +53,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.2</string>
+  <string>0.1.3</string>
   <key>CFBundleVersion</key>
-  <string>3</string>
+  <string>4</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>
@@ -69,5 +70,9 @@ codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 rm -rf "$APPLICATIONS_APP_DIR"
 cp -R "$APP_DIR" "$APPLICATIONS_APP_DIR"
 
+rm -f "$ZIP_PATH"
+ditto -c -k --keepParent "$APP_DIR" "$ZIP_PATH"
+
 echo "Built $APP_DIR"
 echo "Copied $APPLICATIONS_APP_DIR"
+echo "Packaged $ZIP_PATH"

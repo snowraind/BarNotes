@@ -108,9 +108,7 @@ extension MarkdownStyler {
                 .strikethroughColor: ctx.configuration.theme.strikethroughColor
             ]))
 
-            let isActiveSyntax = token.markerRanges.contains { markerRange in
-                NSLocationInRange(ctx.caretLocation, markerRange) || ctx.caretLocation == NSMaxRange(markerRange)
-            }
+            let isActiveSyntax = token.markerRanges.contains { ctx.isSourceRangeActive($0) }
             guard !isActiveSyntax else { continue }
             for markerRange in token.markerRanges {
                 attrs.append((markerRange, [.foregroundColor: ctx.configuration.theme.mutedText.withAlphaComponent(0.45)]))

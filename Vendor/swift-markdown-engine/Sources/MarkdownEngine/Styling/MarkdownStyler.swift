@@ -66,6 +66,7 @@ extension MarkdownStyler {
         let baseDescriptor: NSFontDescriptor
         let fontName: String
         let caretLocation: Int
+        let selectionRange: NSRange
         let layoutBridge: LayoutBridge?
         let baseDefaultLineHeight: CGFloat
         let baseParagraphSpacing: CGFloat
@@ -78,6 +79,15 @@ extension MarkdownStyler {
         let configuration: MarkdownEditorConfiguration
 
         var services: MarkdownEditorServices { configuration.services }
+
+        func isSourceRangeActive(_ sourceRange: NSRange, includeEnd: Bool = false) -> Bool {
+            guard sourceRange.location != NSNotFound, sourceRange.length > 0 else { return false }
+            if selectionRange.length > 0 {
+                return NSIntersectionRange(selectionRange, sourceRange).length > 0
+            }
+            return NSLocationInRange(caretLocation, sourceRange)
+                || (includeEnd && caretLocation == NSMaxRange(sourceRange))
+        }
     }
 }
 
@@ -93,6 +103,7 @@ enum MarkdownStyler {
         fontSize: CGFloat,
         layoutBridge: LayoutBridge? = nil,
         caretLocation: Int,
+        selectionRange: NSRange,
         activeTokenIndices: Set<Int>,
         wikiLinkIDProvider: (NSRange) -> String? = { _ in nil },
         precomputedTokens: [MarkdownToken]? = nil,
@@ -144,6 +155,7 @@ enum MarkdownStyler {
             baseDescriptor: baseFont.fontDescriptor,
             fontName: fontName,
             caretLocation: caretLocation,
+            selectionRange: selectionRange,
             layoutBridge: layoutBridge,
             baseDefaultLineHeight: baseDefaultLineHeight,
             baseParagraphSpacing: baseParagraphSpacing,
@@ -344,8 +356,7 @@ extension MarkdownStyler {
         let hrPattern = "^[ \\t]*-{3,}[ \\t]*$"
         if let hrRegex = try? NSRegularExpression(pattern: hrPattern, options: [.anchorsMatchLines]) {
             for hrMatch in hrRegex.matches(in: ctx.text, range: ctx.fullRange) {
-                let isActiveSyntax = NSLocationInRange(ctx.caretLocation, hrMatch.range)
-                    || ctx.caretLocation == NSMaxRange(hrMatch.range)
+                let isActiveSyntax = ctx.isSourceRangeActive(hrMatch.range, includeEnd: true)
                 let rulePara = NSMutableParagraphStyle()
                 rulePara.minimumLineHeight = ctx.baseDefaultLineHeight
                 rulePara.maximumLineHeight = ctx.baseDefaultLineHeight
@@ -378,8 +389,7 @@ extension MarkdownStyler {
 
             let syntaxEnd = max(NSMaxRange(markerRange), spacerRange.location == NSNotFound ? NSMaxRange(markerRange) : NSMaxRange(spacerRange))
             let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
-            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
-                || ctx.caretLocation == syntaxEnd
+            let isActiveSyntax = ctx.isSourceRangeActive(syntaxRange)
             guard !isActiveSyntax else { continue }
 
             let paraRange = ctx.nsText.paragraphRange(for: match.range)
@@ -414,16 +424,13 @@ extension MarkdownStyler {
             if MarkdownDetection.isInsideCodeBlock(range: markerRange, codeTokens: ctx.codeTokens) { continue }
             let syntaxEnd = NSMaxRange(match.range(at: 3))
             let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
-            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
-                || ctx.caretLocation == syntaxEnd
+            let isActiveSyntax = ctx.isSourceRangeActive(syntaxRange)
             guard !isActiveSyntax else { continue }
 
             let spacerRange = match.range(at: 3)
             if spacerRange.location != NSNotFound {
-                let extraSpacing = ("  " as NSString).size(withAttributes: [.font: ctx.baseFont]).width
                 attrs.append((spacerRange, [
-                    .foregroundColor: NSColor.clear,
-                    .kern: extraSpacing
+                    .foregroundColor: NSColor.clear
                 ]))
             }
             attrs.append((markerRange, [
@@ -444,16 +451,13 @@ extension MarkdownStyler {
             if MarkdownDetection.isInsideCodeBlock(range: markerRange, codeTokens: ctx.codeTokens) { continue }
             let syntaxEnd = NSMaxRange(match.range(at: 3))
             let syntaxRange = NSRange(location: markerRange.location, length: max(0, syntaxEnd - markerRange.location))
-            let isActiveSyntax = NSLocationInRange(ctx.caretLocation, syntaxRange)
-                || ctx.caretLocation == syntaxEnd
+            let isActiveSyntax = ctx.isSourceRangeActive(syntaxRange)
             guard !isActiveSyntax else { continue }
 
             let spacerRange = match.range(at: 3)
             if spacerRange.location != NSNotFound {
-                let extraSpacing = ("  " as NSString).size(withAttributes: [.font: ctx.baseFont]).width
                 attrs.append((spacerRange, [
-                    .foregroundColor: NSColor.clear,
-                    .kern: extraSpacing
+                    .foregroundColor: NSColor.clear
                 ]))
             }
             attrs.append((markerRange, [

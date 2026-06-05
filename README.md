@@ -13,6 +13,17 @@ BarNotes is forked from / based on [oil-oil/NotchNotes](https://github.com/oil-o
 
 After downloading, unzip the app, move it to Applications, then right-click and choose Open on the first launch.
 
+## Release Notes
+
+### v0.1.3
+
+- Fixed Markdown list continuation for unordered, ordered, and task lists.
+- Improved live rendering around list markers, checkboxes, dividers, quotes, and strikethrough text.
+- Added toolbar toggles for list formats so repeated clicks remove the format and other list buttons switch formats.
+- Improved selected-line Tab indentation and aligned source/rendered Tab widths.
+- Added a menu-bar style app icon and cleaned up the settings popover appearance.
+- Stabilized panel height adjustment behavior.
+
 ## Features
 
 - Menu bar notebook that opens on hover by default.

@@ -62,6 +62,7 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     var pendingEditedRange: NSRange? = nil
     var pendingPreEditActiveTokenIndices: Set<Int>? = nil
     var previousCaretLocation: Int? = nil
+    var previousSelectionRange: NSRange? = nil
 
     var cachedCodeBlockTokens: [(index: Int, token: MarkdownToken)] = []
     var cachedParsedText: String?
@@ -232,4 +233,3 @@ extension NSTextView {
         return boundingRect
     }
 }
-

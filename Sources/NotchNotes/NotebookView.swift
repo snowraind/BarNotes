@@ -6,6 +6,7 @@ import SwiftUI
 final class DrawerState: ObservableObject {
     @Published var isExpanded = false
     @Published var revealProgress: CGFloat = 0
+    @Published var panelHeight: CGFloat = 0
 }
 
 private enum NotebookMode: Equatable {
@@ -22,6 +23,7 @@ struct NotebookView: View {
     @ObservedObject var editorInteractionState: EditorInteractionState
     let layout: NotchLayout
     let onOpenSettings: () -> Void
+    let onResizeHeight: (CGFloat, Bool) -> Void
     @State private var mode: NotebookMode = .editor
     @State private var pendingDeleteArchive: ArchivedNote?
     @Environment(\.colorScheme) private var colorScheme
@@ -31,8 +33,8 @@ struct NotebookView: View {
             drawer
         }
         .environment(\.appTheme, theme)
-        .preferredColorScheme(theme.isDark ? .dark : .light)
-        .frame(width: layout.expandedSize.width, height: layout.expandedSize.height, alignment: .top)
+        .preferredColorScheme(preferredColorScheme)
+        .frame(width: layout.expandedSize.width, height: panelHeight, alignment: .top)
         .alert("Delete archived note?", isPresented: deleteConfirmationBinding) {
             Button("Delete", role: .destructive) {
                 guard let pendingDeleteArchive else { return }
@@ -52,13 +54,18 @@ struct NotebookView: View {
 
     private var drawer: some View {
         expandedContent
-        .frame(width: layout.expandedSize.width, height: layout.expandedSize.height, alignment: .top)
+        .frame(width: layout.expandedSize.width, height: panelHeight, alignment: .top)
         .background(theme.color(theme.panelBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(theme.color(theme.stroke), lineWidth: 1)
         )
+        .overlay(alignment: .bottom) {
+            PanelHeightResizeHandle(
+                onResizeHeight: onResizeHeight
+            )
+        }
         .contentShape(Rectangle())
         .allowsHitTesting(drawerState.isExpanded)
     }
@@ -197,8 +204,12 @@ struct NotebookView: View {
     private var contentSize: CGSize {
         CGSize(
             width: layout.expandedSize.width - contentHorizontalPadding * 2,
-            height: layout.expandedSize.height - toolbarTopPadding - contentBottomPadding - toolbarHeight - editorSpacing
+            height: panelHeight - toolbarTopPadding - contentBottomPadding - toolbarHeight - editorSpacing
         )
+    }
+
+    private var panelHeight: CGFloat {
+        drawerState.panelHeight > 0 ? drawerState.panelHeight : layout.expandedSize.height
     }
 
     private var toolbarTopPadding: CGFloat {
@@ -230,6 +241,10 @@ struct NotebookView: View {
         AppTheme.resolve(mode: settingsStore.appearanceMode, colorScheme: colorScheme)
     }
 
+    private var preferredColorScheme: ColorScheme? {
+        settingsStore.appearanceMode == .system ? nil : (theme.isDark ? .dark : .light)
+    }
+
     private var deleteConfirmationBinding: Binding<Bool> {
         Binding(
             get: { pendingDeleteArchive != nil },
@@ -246,6 +261,49 @@ struct NotebookView: View {
         mode = .editor
         editorInteractionState.resetSelectionToDocumentStart()
         editorInteractionState.requestLayoutRefresh(resetScroll: true)
+    }
+}
+
+private struct PanelHeightResizeHandle: View {
+    let onResizeHeight: (CGFloat, Bool) -> Void
+    @Environment(\.appTheme) private var theme
+    @State private var cursorIsPushed = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 14)
+            .contentShape(Rectangle())
+            .overlay(alignment: .center) {
+                Capsule()
+                    .fill(theme.textColor(opacity: 0.18))
+                    .frame(width: 46, height: 3)
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        onResizeHeight(value.translation.height, false)
+                    }
+                    .onEnded { value in
+                        onResizeHeight(value.translation.height, true)
+                    }
+            )
+            .onHover { hovering in
+                if hovering, !cursorIsPushed {
+                    NSCursor.resizeUpDown.push()
+                    cursorIsPushed = true
+                } else if !hovering, cursorIsPushed {
+                    NSCursor.pop()
+                    cursorIsPushed = false
+                }
+            }
+            .onDisappear {
+                if cursorIsPushed {
+                    NSCursor.pop()
+                    cursorIsPushed = false
+                }
+            }
+            .help("Drag to resize height")
     }
 }
 

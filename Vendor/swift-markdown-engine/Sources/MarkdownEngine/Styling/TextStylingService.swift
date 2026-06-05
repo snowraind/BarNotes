@@ -38,6 +38,8 @@ struct TextStylingService {
         paragraph.paragraphSpacing = baseParagraphSpacing
         paragraph.paragraphSpacingBefore = 0
         paragraph.lineBreakMode = .byWordWrapping
+        paragraph.tabStops = []
+        paragraph.defaultTabInterval = configuration.lists.indentPerLevel
         return (baseFont, paragraph)
     }
 
@@ -48,6 +50,7 @@ struct TextStylingService {
         baseFont: NSFont,
         paragraphStyle: NSMutableParagraphStyle,
         caretLocation: Int,
+        selectionRange: NSRange,
         activeTokenIndices: Set<Int>,
         wikiLinkIDProvider: (NSRange) -> String?,
         precomputedTokens: [MarkdownToken]? = nil,
@@ -72,6 +75,7 @@ struct TextStylingService {
             fontSize: baseFont.pointSize,
             layoutBridge: layoutBridge,
             caretLocation: caretLocation,
+            selectionRange: selectionRange,
             activeTokenIndices: activeTokenIndices,
             wikiLinkIDProvider: wikiLinkIDProvider,
             precomputedTokens: precomputedTokens,

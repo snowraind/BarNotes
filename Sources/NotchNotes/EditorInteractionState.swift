@@ -57,6 +57,19 @@ final class EditorInteractionState: ObservableObject {
     private var layoutRefreshGeneration = 0
     private var selectionRestoreGeneration = 0
 
+    private enum ListFormat: Equatable {
+        case unordered
+        case ordered
+        case todo
+    }
+
+    private struct ParsedListLine {
+        var indent: String
+        var format: ListFormat?
+        var content: String
+        var newline: String
+    }
+
     func bind(containerView: NSView?, textView: NSTextView?) {
         if let textView {
             self.textView = textView
@@ -126,11 +139,11 @@ final class EditorInteractionState: ObservableObject {
         case .quote:
             prefixSelectedLines(with: "> ", in: textView)
         case .unorderedList:
-            prefixSelectedLines(with: "- ", in: textView)
+            toggleListFormat(.unordered, in: textView)
         case .orderedList:
-            prefixSelectedLines(in: textView) { index in "\(index + 1). " }
+            toggleListFormat(.ordered, in: textView)
         case .todoList:
-            prefixSelectedLines(with: "- [ ] ", in: textView)
+            toggleListFormat(.todo, in: textView)
         }
 
         requestLayoutRefresh()
@@ -207,8 +220,44 @@ final class EditorInteractionState: ObservableObject {
     }
 
     private func wrapSelection(prefix: String, suffix: String, placeholder: String, in textView: NSTextView) {
+        let nsString = textView.string as NSString
         let range = safeSelectedRange(in: textView)
         let selectedText = (textView.string as NSString).substring(with: range)
+
+        if !selectedText.isEmpty,
+           selectedText.hasPrefix(prefix),
+           selectedText.hasSuffix(suffix),
+           selectedText.utf16.count >= prefix.utf16.count + suffix.utf16.count {
+            let contentStart = selectedText.index(selectedText.startIndex, offsetBy: prefix.count)
+            let contentEnd = selectedText.index(selectedText.endIndex, offsetBy: -suffix.count)
+            let content = String(selectedText[contentStart..<contentEnd])
+            replaceText(
+                in: textView,
+                range: range,
+                with: content,
+                selectionAfter: NSRange(location: range.location, length: content.utf16.count)
+            )
+            return
+        }
+
+        let beforeRange = NSRange(location: max(0, range.location - prefix.utf16.count), length: prefix.utf16.count)
+        let afterRange = NSRange(location: NSMaxRange(range), length: suffix.utf16.count)
+        if range.length > 0,
+           beforeRange.location >= 0,
+           NSMaxRange(beforeRange) <= nsString.length,
+           NSMaxRange(afterRange) <= nsString.length,
+           nsString.substring(with: beforeRange) == prefix,
+           nsString.substring(with: afterRange) == suffix {
+            let replacementRange = NSRange(location: beforeRange.location, length: prefix.utf16.count + range.length + suffix.utf16.count)
+            replaceText(
+                in: textView,
+                range: replacementRange,
+                with: selectedText,
+                selectionAfter: NSRange(location: beforeRange.location, length: range.length)
+            )
+            return
+        }
+
         let content = selectedText.isEmpty ? placeholder : selectedText
         let replacement = prefix + content + suffix
         let selection = NSRange(location: range.location + prefix.utf16.count, length: content.utf16.count)
@@ -257,6 +306,91 @@ final class EditorInteractionState: ObservableObject {
         let replacement = replacementBody + (hasTrailingNewline ? "\n" : "")
         let selection = NSRange(location: lineRange.location, length: replacement.utf16.count)
         replaceText(in: textView, range: lineRange, with: replacement, selectionAfter: selection)
+    }
+
+    private func toggleListFormat(_ targetFormat: ListFormat, in textView: NSTextView) {
+        let nsString = textView.string as NSString
+        let selectedRange = safeSelectedRange(in: textView)
+        let lineRange = nsString.lineRange(for: selectedRange)
+        let original = nsString.substring(with: lineRange)
+        let parsedLines = parseListLines(original)
+        let shouldRemove = parsedLines.allSatisfy { $0.format == targetFormat }
+        var orderedIndex = 1
+
+        let replacement = parsedLines.map { parsedLine -> String in
+            let nextFormat: ListFormat? = shouldRemove ? nil : targetFormat
+            defer {
+                if nextFormat == .ordered {
+                    orderedIndex += 1
+                }
+            }
+            return renderListLine(parsedLine, format: nextFormat, orderedIndex: orderedIndex)
+        }.joined()
+
+        replaceText(
+            in: textView,
+            range: lineRange,
+            with: replacement,
+            selectionAfter: NSRange(location: lineRange.location, length: replacement.utf16.count)
+        )
+    }
+
+    private func parseListLines(_ text: String) -> [ParsedListLine] {
+        var lines = text.components(separatedBy: "\n").map { String($0) }
+        let hasTrailingNewline = text.hasSuffix("\n")
+        if hasTrailingNewline {
+            lines.removeLast()
+        }
+        if lines.isEmpty {
+            lines = [""]
+        }
+
+        return lines.enumerated().map { index, line in
+            let newline = (index < lines.count - 1 || hasTrailingNewline) ? "\n" : ""
+            return parseListLine(line, newline: newline)
+        }
+    }
+
+    private func parseListLine(_ line: String, newline: String) -> ParsedListLine {
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+        let patterns: [(ListFormat, String)] = [
+            (.todo, #"^([ \t]*)(?:[-•]|\d+\.)(?:[ \t]+)\[[ xX]\][ \t]*(.*)$"#),
+            (.ordered, #"^([ \t]*)(?:\d+\.)(?:[ \t]+)(.*)$"#),
+            (.unordered, #"^([ \t]*)(?:[-•])(?:[ \t]+)(.*)$"#)
+        ]
+
+        for (format, pattern) in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: line, range: fullRange) else { continue }
+            return ParsedListLine(
+                indent: nsLine.substring(with: match.range(at: 1)),
+                format: format,
+                content: nsLine.substring(with: match.range(at: 2)),
+                newline: newline
+            )
+        }
+
+        let indentLength = line.prefix { $0 == " " || $0 == "\t" }.count
+        let indent = String(line.prefix(indentLength))
+        let content = String(line.dropFirst(indentLength))
+        return ParsedListLine(indent: indent, format: nil, content: content, newline: newline)
+    }
+
+    private func renderListLine(_ line: ParsedListLine, format: ListFormat?, orderedIndex: Int) -> String {
+        let prefix: String
+        switch format {
+        case .unordered:
+            prefix = "- "
+        case .ordered:
+            prefix = "\(orderedIndex). "
+        case .todo:
+            prefix = "- [ ] "
+        case nil:
+            prefix = ""
+        }
+
+        return line.indent + prefix + line.content + line.newline
     }
 
     private func replaceText(in textView: NSTextView, range: NSRange, with replacement: String, selectionAfter: NSRange) {

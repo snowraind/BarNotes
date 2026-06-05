@@ -58,6 +58,7 @@ extension NativeTextViewCoordinator {
         let safeLocation = min(rawSelRange.location, fullLength)
         let safeSelRange = NSRange(location: safeLocation, length: 0)
         previousCaretLocation = safeSelRange.location
+        previousSelectionRange = rawSelRange
         if !wtActive {
             let storageState = WikiLinkService.makeStorageState(
                 from: tv.string,
@@ -161,6 +162,7 @@ extension NativeTextViewCoordinator {
         guard let tv = notification.object as? NSTextView else { return }
         if isWritingToolsActive { return }
         let selRange = tv.selectedRange()
+        let oldSelectionRange = previousSelectionRange
         let currentEventType = NSApp.currentEvent?.type
         // Mouse-/Wake-Fokus auf Link: kein Preview, erst Navigation. Gilt für alle Nicht-Key-Events.
         if currentEventType != .keyDown,
@@ -191,10 +193,14 @@ extension NativeTextViewCoordinator {
             latexTokens: latexTokens,
             allTokens: tokens
         )
-        let caretLoc = selRange.location
+        let caretLoc = min(selRange.location, nsText.length)
         let paragraphRange = nsText.paragraphRange(for: NSRange(location: caretLoc, length: 0))
 
         var paragraphCandidates: [NSRange] = [paragraphRange]
+        paragraphCandidates.append(contentsOf: paragraphRanges(in: nsText, intersecting: selRange))
+        if let oldSelectionRange {
+            paragraphCandidates.append(contentsOf: paragraphRanges(in: nsText, intersecting: oldSelectionRange))
+        }
         if paragraphRange.length == 0 && caretLoc > 0 {
             paragraphCandidates.append(nsText.paragraphRange(for: NSRange(location: max(0, caretLoc - 1), length: 0)))
         }
@@ -217,9 +223,10 @@ extension NativeTextViewCoordinator {
         let tokensChanged = activeTokenIndices != prevActive
         if shouldSkipSelectionRestyle {
             // textDidChange performs the pending restyle for this edit cycle.
-        } else if tokensChanged {
+        } else if tokensChanged || oldSelectionRange != selRange {
             restyleTextView(tv, paragraphCandidates: paragraphCandidates, tokens: tokens)
         }
+        previousSelectionRange = selRange
 
         // Auto-select content when clicking (mouse) into a rendered (previously inactive) latex or image embed
         if selRange.length == 0,

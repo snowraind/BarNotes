@@ -41,7 +41,7 @@ final class SettingsPopoverController: NSObject, NSWindowDelegate {
 
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
@@ -54,6 +54,8 @@ final class SettingsPopoverController: NSObject, NSWindowDelegate {
         let host = FirstMouseHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: contentSize)
         host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
+        host.layer?.isOpaque = false
         panel.contentView = host
 
         self.panel = panel
@@ -252,7 +254,7 @@ struct SettingsPopoverView: View {
             }
         }
         .environment(\.appTheme, theme)
-        .preferredColorScheme(theme.isDark ? .dark : .light)
+        .preferredColorScheme(preferredColorScheme)
         .padding(14)
         .frame(width: 278, height: 202)
         .background(
@@ -263,13 +265,16 @@ struct SettingsPopoverView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(theme.color(theme.stroke), lineWidth: 1)
         )
-        .shadow(color: theme.color(theme.shadow), radius: 24, x: 0, y: 14)
         .scaleEffect(appeared ? 1 : 0.965, anchor: .topTrailing)
         .opacity(appeared ? 1 : 0)
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: appeared)
         .onAppear {
             appeared = true
         }
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        settingsStore.appearanceMode == .system ? nil : (theme.isDark ? .dark : .light)
     }
 }
 

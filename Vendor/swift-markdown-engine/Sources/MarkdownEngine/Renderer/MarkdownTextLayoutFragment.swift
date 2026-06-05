@@ -422,11 +422,10 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             let font = (ts.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
                 ?? (textLayoutManager?.textContainer?.textView?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
             let markerWidth = ("-" as NSString).size(withAttributes: [.font: font]).width
-            let spacerWidth = (" " as NSString).size(withAttributes: [.font: font]).width
             let ascent = max(0, font.ascender)
             let descent = max(0, -font.descender)
             let diameter = max(3.5, min(6.5, ceil((ascent + descent) * 0.28)))
-            let centerX = pos.x + markerWidth + spacerWidth + diameter / 2
+            let centerX = pos.x + markerWidth / 2
             let centerY = pos.baselineY + (descent - ascent) / 2
             let scale = textLayoutManager?.textContainer?.textView?.window?.backingScaleFactor
                 ?? NSScreen.main?.backingScaleFactor ?? 2.0
@@ -460,13 +459,12 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
 
             let font = (ts.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
                 ?? (textLayoutManager?.textContainer?.textView?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
-            let spacerWidth = ("  " as NSString).size(withAttributes: [.font: font]).width
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: ((textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration.theme.bodyText ?? .labelColor).withAlphaComponent(0.88)
             ]
             let markerSize = (marker as NSString).size(withAttributes: attributes)
-            let x = pos.x + spacerWidth
+            let x = pos.x
             let y = pos.baselineY - font.ascender
             (marker as NSString).draw(
                 in: CGRect(x: x, y: y, width: markerSize.width + 2, height: max(markerSize.height, font.ascender - font.descender)),

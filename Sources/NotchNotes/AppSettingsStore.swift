@@ -59,6 +59,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 @MainActor
 final class AppSettingsStore: ObservableObject {
     static let editorFontSizeRange: ClosedRange<Double> = 12...24
+    static let panelHeightRange: ClosedRange<Double> = 420...1400
 
     @Published var triggerMode: TriggerMode {
         didSet {
@@ -78,9 +79,16 @@ final class AppSettingsStore: ObservableObject {
         }
     }
 
+    @Published private(set) var panelHeight: Double {
+        didSet {
+            UserDefaults.standard.set(panelHeight, forKey: Self.panelHeightKey)
+        }
+    }
+
     private static let triggerModeKey = "notchNotes.triggerMode"
     private static let appearanceModeKey = "notchNotes.appearanceMode"
     private static let editorFontSizeKey = "notchNotes.editorFontSize"
+    private static let panelHeightKey = "notchNotes.panelHeight"
 
     init() {
         let rawMode = UserDefaults.standard.string(forKey: Self.triggerModeKey)
@@ -91,6 +99,9 @@ final class AppSettingsStore: ObservableObject {
 
         let storedFontSize = UserDefaults.standard.double(forKey: Self.editorFontSizeKey)
         editorFontSize = storedFontSize == 0 ? 15 : Self.clampedFontSize(storedFontSize)
+
+        let storedPanelHeight = UserDefaults.standard.double(forKey: Self.panelHeightKey)
+        panelHeight = storedPanelHeight == 0 ? 0 : Self.clampedPanelHeight(storedPanelHeight)
     }
 
     func increaseEditorFontSize() {
@@ -101,7 +112,15 @@ final class AppSettingsStore: ObservableObject {
         editorFontSize = Self.clampedFontSize(editorFontSize - 1)
     }
 
+    func setPanelHeight(_ height: Double) {
+        panelHeight = Self.clampedPanelHeight(height)
+    }
+
     private static func clampedFontSize(_ fontSize: Double) -> Double {
         min(max(fontSize, editorFontSizeRange.lowerBound), editorFontSizeRange.upperBound)
+    }
+
+    private static func clampedPanelHeight(_ height: Double) -> Double {
+        min(max(height, panelHeightRange.lowerBound), panelHeightRange.upperBound)
     }
 }

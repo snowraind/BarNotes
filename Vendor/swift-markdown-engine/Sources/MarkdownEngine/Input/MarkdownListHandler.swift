@@ -28,7 +28,7 @@ struct MarkdownLists {
     }
 
     static let listRegex = try! NSRegularExpression(
-        pattern: #"^\s*((?:(\d+)\.|[-•])(?:\s+\[[ xX]\])?\s+)"#
+        pattern: #"^[ \t]*((?:(\d+)\.|[-•])(?:[ \t]+\[[ xX]\])?[ \t]+)"#
     )
     static let dashNoSpaceRegex = try! NSRegularExpression(pattern: #"^\s*-(?!\s)"#)
     static let numberRegex = try! NSRegularExpression(pattern: #"^\s*(\d+)\.$"#)
@@ -97,6 +97,31 @@ struct MarkdownLists {
         let nextLocation = max(lineRange.location, selectedRange.location - removedBeforeSelection)
         let nextLength = max(0, selectedRange.length - max(0, removedTotal - removedBeforeSelection))
         textView.setSelectedRange(NSRange(location: nextLocation, length: nextLength))
+        return true
+    }
+
+    static func indentSelectedLines(in textView: NSTextView) -> Bool {
+        let nsText = textView.string as NSString
+        let selectedRange = textView.selectedRange()
+        guard selectedRange.length > 0 else { return false }
+
+        let safeLocation = min(selectedRange.location, nsText.length)
+        let lineRange = nsText.lineRange(for: NSRange(location: safeLocation, length: selectedRange.length))
+        let original = nsText.substring(with: lineRange) as NSString
+        var editedLines: [String] = []
+
+        original.enumerateSubstrings(
+            in: NSRange(location: 0, length: original.length),
+            options: [.byLines, .substringNotRequired]
+        ) { _, _, enclosingRange, _ in
+            let line = original.substring(with: enclosingRange)
+            editedLines.append("\t" + line)
+        }
+
+        guard !editedLines.isEmpty else { return false }
+        let replacement = editedLines.joined()
+        MarkdownLists.performEdit(textView, replace: lineRange, with: replacement)
+        textView.setSelectedRange(NSRange(location: lineRange.location, length: (replacement as NSString).length))
         return true
     }
 
@@ -243,6 +268,9 @@ struct MarkdownLists {
         // TAB: indent list items (skip in code blocks)
         if replacementString == "\t" && !isInCodeBlock {
             guard listsEnabled else { return true }
+            if MarkdownLists.indentSelectedLines(in: textView) {
+                return false
+            }
             let nsText = textView.string as NSString
             let insertionLocation = affectedCharRange.location
             let safeLocTAB = min(affectedCharRange.location, nsText.length)
@@ -309,21 +337,6 @@ struct MarkdownLists {
             guard listsEnabled && !isInCodeBlock else { return true }
             let listLine = nsText.substring(with: currentLineRange)
             if let match = MarkdownLists.listRegex.firstMatch(in: listLine, range: NSRange(location: 0, length: listLine.utf16.count)) {
-                let contentStart = match.range.location + match.range.length
-                let contentLength = listLine.utf16.count - contentStart
-                let contentRangeLocal = NSRange(location: contentStart, length: contentLength)
-                let contentText = (listLine as NSString).substring(with: contentRangeLocal).trimmingCharacters(in: .whitespacesAndNewlines)
-                if contentText.isEmpty {
-                    let removalLengthRaw = match.range.location + match.range.length
-                    let lineEnd = currentLineRange.location + currentLineRange.length
-                    let hasNewline = currentLineRange.length > 0 && (textView.string as NSString).substring(with: NSRange(location: lineEnd - 1, length: 1)) == "\n"
-                    let maxBodyLen = hasNewline ? currentLineRange.length - 1 : currentLineRange.length
-                    let removalLength = min(removalLengthRaw, maxBodyLen)
-                    let removalRange = NSRange(location: currentLineRange.location, length: removalLength)
-                    MarkdownLists.performEdit(textView, replace: removalRange, with: "")
-                    textView.setSelectedRange(NSRange(location: currentLineRange.location, length: 0))
-                    return false
-                }
                 let leadingWhitespace: String
                 if let wsMatch = MarkdownLists.leadingWhitespaceRegex.firstMatch(in: listLine, range: NSRange(location: 0, length: listLine.utf16.count)) {
                     leadingWhitespace = (listLine as NSString).substring(with: wsMatch.range)
@@ -350,6 +363,14 @@ struct MarkdownLists {
                     }
                 }
                 MarkdownLists.performEdit(textView, replace: affectedCharRange, with: newListItem)
+                let nextSelection = NSRange(
+                    location: affectedCharRange.location + (newListItem as NSString).length,
+                    length: 0
+                )
+                textView.setSelectedRange(nextSelection)
+                DispatchQueue.main.async { [weak textView] in
+                    textView?.setSelectedRange(nextSelection)
+                }
                 return false
             }
         }

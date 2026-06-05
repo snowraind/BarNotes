@@ -59,6 +59,7 @@ extension NativeTextViewCoordinator {
             fontSize: fontSize,
             layoutBridge: layoutBridge,
             caretLocation: caretLocation,
+            selectionRange: textView.selectedRange(),
             activeTokenIndices: activeTokenIndices,
             precomputedTokens: tokens,
             configuration: configuration
@@ -103,6 +104,7 @@ extension NativeTextViewCoordinator {
             baseFont: baseFont,
             paragraphStyle: paragraphStyle,
             caretLocation: textView.selectedRange().location,
+            selectionRange: textView.selectedRange(),
             activeTokenIndices: activeTokenIndices,
             wikiLinkIDProvider: { [weak self] range in
                 self?.wikiLinkID(for: range)

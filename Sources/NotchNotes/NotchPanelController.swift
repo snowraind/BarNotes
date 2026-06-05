@@ -42,6 +42,10 @@ final class NotchPanelController: NSObject {
     private var isExpanded = false
     private var activeMenuTrackingCount = 0
     private var collapseTask: DispatchWorkItem?
+    private var appearanceObservation: NSKeyValueObservation?
+    private var livePanelHeight: CGFloat?
+    private var resizeStartHeight: CGFloat?
+    private var isAnimatingVisibility = false
 
     override init() {
         drawerPanel = NotchPanel(
@@ -59,6 +63,7 @@ final class NotchPanelController: NSObject {
         observePanelMouseEvents()
         observeGlobalSelectionMouseEvents()
         observeMenuTracking()
+        observeAppearanceChanges()
     }
 
     func setStatusItemFrameProvider(_ provider: @escaping () -> NSRect?) {
@@ -90,6 +95,7 @@ final class NotchPanelController: NSObject {
         isExpanded = false
         drawerState.isExpanded = false
         drawerState.revealProgress = 0
+        drawerPanel.alphaValue = 0
         drawerPanel.setFrame(drawerFrame(for: layout), display: true)
         drawerPanel.orderOut(nil)
     }
@@ -100,9 +106,17 @@ final class NotchPanelController: NSObject {
         cancelCollapse()
         isExpanded = true
         rebuildContent(layout: layout)
-        drawerPanel.setFrame(drawerFrame(for: layout), display: true)
+        let finalFrame = drawerFrame(for: layout)
+        if animated {
+            drawerPanel.alphaValue = 0
+            drawerPanel.setFrame(slideFrame(from: finalFrame), display: true)
+        } else {
+            drawerPanel.alphaValue = 1
+            drawerPanel.setFrame(finalFrame, display: true)
+        }
         NSApp.activate(ignoringOtherApps: true)
         drawerPanel.makeKeyAndOrderFront(nil)
+        animatePanelIn(to: finalFrame, animated: animated)
         setDrawerExpanded(true, animated: animated)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) { [weak self] in
             guard let self else { return }
@@ -124,14 +138,7 @@ final class NotchPanelController: NSObject {
         settingsPopoverController.close(animated: false)
         isExpanded = false
         setDrawerExpanded(false, animated: animated)
-        let delay: TimeInterval = animated ? 0.18 : 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            guard !self.isExpanded else { return }
-            let layout = self.currentLayout()
-            self.drawerPanel.orderOut(nil)
-            self.drawerPanel.setFrame(self.drawerFrame(for: layout), display: false)
-        }
+        animatePanelOut(animated: animated)
     }
 
     private func configurePanel(_ panel: NotchPanel) {
@@ -150,6 +157,7 @@ final class NotchPanelController: NSObject {
     private func rebuildContent(layout: NotchLayout? = nil) {
         let layout = layout ?? currentLayout()
         cachedLayout = layout
+        drawerState.panelHeight = layout.expandedSize.height
         let view = NotebookView(
             store: store,
             settingsStore: settingsStore,
@@ -157,7 +165,10 @@ final class NotchPanelController: NSObject {
             drawerState: drawerState,
             editorInteractionState: editorInteractionState,
             layout: layout,
-            onOpenSettings: { [weak self] in self?.openSettingsPopover() }
+            onOpenSettings: { [weak self] in self?.openSettingsPopover() },
+            onResizeHeight: { [weak self] delta, commit in
+                self?.resizePanelHeight(by: delta, commit: commit)
+            }
         )
 
         if let hostingView {
@@ -247,6 +258,19 @@ final class NotchPanelController: NSObject {
         )
     }
 
+    private func observeAppearanceChanges() {
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.settingsStore.appearanceMode == .system else { return }
+                let layout = self.currentLayout()
+                self.rebuildContent(layout: layout)
+                self.drawerPanel.setFrame(self.drawerFrame(for: layout), display: true)
+                self.editorInteractionState.requestLayoutRefresh(searchingIn: self.hostingView)
+            }
+        }
+    }
+
     @objc private func screenParametersChanged(_ notification: Notification) {
         let layout = currentLayout()
         cancelCollapse()
@@ -308,7 +332,7 @@ final class NotchPanelController: NSObject {
         }
 
         collapseTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: task)
     }
 
     private func cancelCollapse() {
@@ -333,7 +357,20 @@ final class NotchPanelController: NSObject {
     }
 
     private func currentLayout() -> NotchLayout {
-        NotchGeometry.layout(for: targetScreen())
+        let baseLayout = NotchGeometry.layout(for: targetScreen())
+        let storedHeight = livePanelHeight
+            ?? CGFloat(settingsStore.panelHeight == 0 ? baseLayout.expandedSize.height : settingsStore.panelHeight)
+        let height = clampedPanelHeight(
+            storedHeight,
+            baseLayout: baseLayout
+        )
+        return NotchLayout(
+            notchSize: baseLayout.notchSize,
+            compactSize: baseLayout.compactSize,
+            expandedSize: NSSize(width: baseLayout.expandedSize.width, height: height),
+            compactTopOffset: baseLayout.compactTopOffset,
+            expandedTopOffset: baseLayout.expandedTopOffset
+        )
     }
 
     private func targetScreen() -> NSScreen? {
@@ -363,6 +400,102 @@ final class NotchPanelController: NSObject {
         )
 
         return NSRect(origin: NSPoint(x: x, y: y), size: layout.expandedSize)
+    }
+
+    private func resizePanelHeight(by delta: CGFloat, commit: Bool) {
+        let baseLayout = NotchGeometry.layout(for: targetScreen())
+        if resizeStartHeight == nil {
+            resizeStartHeight = currentLayout().expandedSize.height
+        }
+        let startHeight = resizeStartHeight ?? baseLayout.expandedSize.height
+        let clampedHeight = clampedPanelHeight(startHeight + delta, baseLayout: baseLayout)
+        livePanelHeight = clampedHeight
+        cancelCollapse()
+        guard commit else { return }
+
+        let layout = currentLayout()
+        cachedLayout = layout
+        drawerState.panelHeight = layout.expandedSize.height
+        drawerPanel.setFrame(drawerFrame(for: layout), display: true)
+        if commit {
+            settingsStore.setPanelHeight(Double(clampedHeight))
+            livePanelHeight = nil
+            resizeStartHeight = nil
+            editorInteractionState.requestLayoutRefresh(searchingIn: hostingView)
+        }
+    }
+
+    private func slideFrame(from finalFrame: NSRect) -> NSRect {
+        finalFrame.offsetBy(dx: 0, dy: 10)
+    }
+
+    private func animatePanelIn(to finalFrame: NSRect, animated: Bool) {
+        guard animated else {
+            drawerPanel.alphaValue = 1
+            drawerPanel.setFrame(finalFrame, display: true)
+            return
+        }
+        isAnimatingVisibility = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            drawerPanel.animator().alphaValue = 1
+            drawerPanel.animator().setFrame(finalFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                self?.isAnimatingVisibility = false
+            }
+        }
+    }
+
+    private func animatePanelOut(animated: Bool) {
+        let finalFrame = drawerPanel.frame
+        let endFrame = slideFrame(from: finalFrame)
+        guard animated else {
+            let layout = currentLayout()
+            drawerPanel.alphaValue = 0
+            drawerPanel.orderOut(nil)
+            drawerPanel.setFrame(drawerFrame(for: layout), display: false)
+            return
+        }
+        isAnimatingVisibility = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            drawerPanel.animator().alphaValue = 0
+            drawerPanel.animator().setFrame(endFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                guard !self.isExpanded else { return }
+                let layout = self.currentLayout()
+                self.drawerPanel.orderOut(nil)
+                self.drawerPanel.alphaValue = 1
+                self.drawerPanel.setFrame(self.drawerFrame(for: layout), display: false)
+                self.isAnimatingVisibility = false
+            }
+        }
+    }
+
+    private func clampedPanelHeight(_ height: CGFloat, baseLayout: NotchLayout) -> CGFloat {
+        let anchor = statusItemFrameProvider?()
+        let screen = anchor.flatMap { screenContaining($0) } ?? targetScreen()
+        let screenFrame = screen?.visibleFrame
+            ?? screen?.frame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let gap: CGFloat = 8
+        let anchorFrame = anchor ?? NSRect(
+            x: screenFrame.maxX - 22,
+            y: screenFrame.maxY - 22,
+            width: 22,
+            height: 22
+        )
+        let maxHeight = max(
+            AppSettingsStore.panelHeightRange.lowerBound,
+            Double(anchorFrame.minY - gap - screenFrame.minY - 10)
+        )
+        let upperBound = min(Double(baseLayout.expandedSize.height) + 420, maxHeight)
+        return CGFloat(min(max(Double(height), AppSettingsStore.panelHeightRange.lowerBound), upperBound))
     }
 
     private func screenContaining(_ rect: NSRect) -> NSScreen? {
